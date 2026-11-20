@@ -1,0 +1,4 @@
+DirectoryIndex index.html
+Options -Indexes
+RewriteEngine On
+RewriteRule ^(api/matches|api/replays|admin)/?$ index.php [END]

@@ -1,0 +1,4 @@
+/var/
+/public/*
+!/public/.htaccess
+!/public/index.php
