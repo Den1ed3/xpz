@@ -56,10 +56,7 @@ function observed(p,state,t,prepared) {
   else inv='<p class="ex-note">'+(prepared.inventories.length?'First inventory snapshot at '+clock(prepared.inventories[0].time)+'.':'Inventory snapshots unavailable.')+'</p>';
   const skills=state.levels.length?'<ul class="ex-skills">'+state.levels.map(([k,v])=>'<li>'+escape(ability(k))+' <b>Lv '+num(v)+'</b></li>').join('')+'</ul>':
     '<p class="ex-note">'+(state.hasTimedSkills?'No skill levels recorded yet.':'Skill upgrade times unavailable.')+'</p>';
-  let purchases;
-  if(state.purchases.length) purchases='<ol class="ex-buys">'+state.purchases.slice(-6).reverse().map(e=>'<li><time>'+clock(e.time)+'</time>'+icon(e.key??e.item_id)+escape(item(e.key??e.item_id))+'</li>').join('')+'</ol>';
-  else purchases='<p class="ex-note">'+(state.hasPurchases?'No purchases recorded yet.':'Purchase times unavailable.')+'</p>';
-  return '<section><h4>Inventory</h4>'+inv+'</section><section><h4>Skill levels</h4>'+skills+'</section><section><h4>Recent purchases</h4>'+purchases+'</section>';
+  return '<section><h4>Inventory</h4>'+inv+'</section><section><h4>Skill levels</h4>'+skills+'</section>';
 }
 function endBuild(p) {
   const inv=Array.from({length:6},(_,i)=>p['item_'+i]);
