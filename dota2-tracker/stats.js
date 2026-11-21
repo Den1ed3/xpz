@@ -184,15 +184,51 @@ function tournamentCharts(s){
   const legend=slices.map((s,i)=>'<li><i style="background:'+colors[i]+'"></i>'+h(s.name)+' <strong>'+fmt(s.value)+' · '+pct(s.value/total*100)+'</strong></li>').join('');
   return '<div class="rank-charts">'+section('Highest net worth','<p class="sl-muted">Top five individual match finishes</p><ul class="worth-list">'+(worth||'<li>No net worth recorded.</li>')+'</ul>')+section('Support impact','<p class="sl-muted">Share of total assists among identified players</p>'+(total?'<div class="assist-layout"><div class="assist-donut" aria-hidden="true" style="background:conic-gradient('+stops.join(',')+')"><b>'+fmt(total)+'<small>assists</small></b></div><ul class="assist-list">'+legend+'</ul></div>':'<p>No assists recorded.</p>'))+'</div>';
 }
+function keyPlayerCards(s){
+  const rows=s.matches.flatMap(m=>players(m).map(p=>({
+    p, m, win:typeof m.radiant_win==='boolean'?radiant(p)===m.radiant_win:null,
+    name:ign(p),heroId:p.hero_id,href:'#match/'+m.match_id
+  })));
+  const repeat=s.players.filter(p=>p.games>=2).map(p=>({
+    ...p, href:'#player/'+p.id,
+    avgKda:numericMean(p.rows.map(r=>kda(r.p))),avgDeaths:available(p.deaths)?p.deaths/p.games:null
+  }));
+  function card(title,entries,score,format,description,low=false){
+    let best=null, value=null;
+    for(const entry of entries){
+      const n=score(entry);
+      if(available(n) && (!best || (low?n<value:n>value))){best=entry;value=n;}
+    }
+    const header='<small>'+h(title)+'</small>';
+    if(!best)return '<div class="sl-award award-empty">'+header+'<p>'+h(typeof description==='string'?description:entries===repeat?'Requires two tracked games per player':'Awaiting a qualifying match')+'</p><span>No qualifying data</span></div>';
+    const badge=typeof best.win==='boolean'?'<em class="award-result '+(best.win?'won':'lost')+'">'+(best.win?'Win':'Loss')+'</em>':'';
+    const note=typeof description==='function'?description(best):description;
+    return '<a class="sl-award" href="'+h(best.href)+'">'+header+'<div>'+portrait(best.heroId)+'<span><b>'+h(best.name)+'</b> '+badge+'<br>'+h(heroName(best.heroId))+'</span></div><strong>'+h(format(value))+'</strong>'+h(note)+'</a>';
+  }
+  const multi=entry=>'Average over '+entry.games+' games';
+  const winning=rows.filter(r=>r.win && available(r.p.assists) && r.p.assists>0)
+    .sort((a,b)=>(kp(b.m,b.p)??-1)-(kp(a.m,a.p)??-1));
+  return [
+    card('Play of the series',rows,r=>kda(r.p),v=>fixed(v)+' KDA',r=>[r.p.kills,r.p.deaths,r.p.assists].join(' / ')+' · Best single-game KDA'),
+    card('Support MVP',winning,r=>r.p.assists,v=>fmt(v)+' assists',r=>'Most assists in a win · '+pct(kp(r.m,r.p))+' KP'),
+    card('The nuker',rows,r=>r.p.hero_damage,fmt,'Hero damage'),
+    card('The demolisher',rows,r=>r.p.tower_damage,fmt,'Tower damage'),
+    card('The benefactor',rows,r=>r.p.support_gold_spent,fmt,'Gold spent on support items'),
+    card('Bloodthirsty',rows,r=>r.p.kills,fmt,'Most kills in a game'),
+    card('Unsung hero',rows.filter(r=>r.win===false),r=>r.p.assists,fmt,'Most assists in a loss'),
+    card('The enabler',rows,r=>r.p.assists,fmt,'Most assists in a game'),
+    card('Money printer',repeat,r=>r.gpm,v=>fmt(v)+' GPM',multi),
+    card('Most consistent',repeat,r=>r.avgKda,v=>fixed(v)+' KDA',multi),
+    card('The wall',repeat,r=>r.avgDeaths,v=>v.toFixed(1)+' deaths',multi,true)
+  ].join('');
+}
 export function playersView(matches,id){
   const s=summary(matches);
   if(id){const p=s.players.find(o=>String(o.id)===String(id));return p?profile(p):'<p class="sl-empty">This player has no tracked matches.</p>';}
   const ranked=[...s.players].sort(byStanding).map((p,i)=>({...p,rank:i+1}));
-  const best=s.matches.flatMap(m=>players(m).map(p=>({m,p,score:kda(p)}))).filter(r=>available(r.score)).sort((a,b)=>b.score-a.score)[0];
-  const highlights=best?[{title:'Play of the series',label:'KDA',value:best.score.toFixed(2),name:ign(best.p),heroId:best.p.hero_id,matchId:best.m.match_id},...s.awards]:s.awards;
-  const cards=highlights.map(a=>'<a class="sl-award" href="#match/'+a.matchId+'"><small>'+h(a.title)+'</small><div>'+portrait(a.heroId)+'<b>'+h(a.name)+'</b></div><strong>'+ (typeof a.value==='string'?h(a.value):fmt(a.value))+'</strong>'+h(a.label)+' · '+h(heroName(a.heroId))+'</a>').join('');
+  const cards=keyPlayerCards(s);
   const tools='<div class="board-tools"><label>Search player <input type="search" data-query value="'+h(boardState.query)+'" placeholder="Player name"></label><label>Minimum games <input data-min-games type="number" min="1" step="1" value="'+boardState.minGames+'"></label></div>';
-  return section('Tournament highlights','<div class="sl-awards">'+cards+'</div>')+'<div class="rank-layout">'+section('Player leaderboard',tools+'<div id="rank-results">'+standingsPanel(ranked)+'</div><p class="sl-muted">Ranked by win rate, then wins and overall KDA.</p>')+section('Hero meta','<div id="meta-results">'+heroMetaPanel(s.heroes)+'</div>')+'</div>'+tournamentCharts(s);
+  return section('Key Players','<div class="sl-awards">'+cards+'</div>')+'<div class="rank-layout">'+section('Player leaderboard',tools+'<div id="rank-results">'+standingsPanel(ranked)+'</div><p class="sl-muted">Ranked by win rate, then wins and overall KDA.</p>')+section('Hero meta','<div id="meta-results">'+heroMetaPanel(s.heroes)+'</div>')+'</div>'+tournamentCharts(s);
 }
 export function bindPlayerBoard(root,matches){
   const board=root.querySelector('#rank-results'),meta=root.querySelector('#meta-results');

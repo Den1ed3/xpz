@@ -1,5 +1,5 @@
 const playerNumbers = ['kills','deaths','assists','gold_per_min','xp_per_min','net_worth','level',
-  'hero_damage','hero_healing','tower_damage','last_hits','denies','obs_placed','sen_placed',
+  'hero_damage','hero_healing','support_gold_spent','tower_damage','last_hits','denies','obs_placed','sen_placed',
   'purchase_ward_observer','purchase_ward_sentry','total_gold','stuns','item_0','item_1','item_2',
   'item_3','item_4','item_5','item_neutral','backpack_0','backpack_1','backpack_2']
 class InputError extends Error {
