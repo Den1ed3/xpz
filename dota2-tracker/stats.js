@@ -194,15 +194,16 @@ function lobbyRecords(matches){
 function tournamentCharts(s,support){
   const entries=s.matches.flatMap(m=>players(m).filter(p=>available(p.net_worth)).map(p=>({p,m}))).sort((a,b)=>b.p.net_worth-a.p.net_worth).slice(0,5);
   const worth=entries.map(({p,m})=>'<li><div><a href="#match/'+m.match_id+'">'+h(ign(p))+'</a><span>'+h(hero(p))+' · #'+m.match_id+'</span></div><div class="worth-track"><i style="width:'+100*p.net_worth/Math.max(1,entries[0].p.net_worth)+'%"></i></div><strong>'+fmt(p.net_worth)+'</strong></li>').join('');
-  const total=support.total;
-  const slices=support.ranked.slice(0,5).map(p=>({name:p.name,value:p.gold}));
-  const rest=total-slices.reduce((n,p)=>n+p.value,0);
-  if(rest)slices.push({name:'Other players',value:rest});
+  const total=support.count?support.total/support.count:0;
+  const top=support.ranked.slice(0,5);
+  const slices=top.map(p=>({name:p.name,value:p.perLobby}));
+  const remainingGold=support.total-top.reduce((n,p)=>n+p.gold,0);
+  if(remainingGold)slices.push({name:'Other players',value:remainingGold/support.count});
   const colors=['#f2aa52','#63a8e6','#60bd98','#c78ae1','#ef8274','#667582'];
   let cumulative=0;
   const stops=slices.map((s,i)=>{const start=cumulative;cumulative+=s.value/total*100;return colors[i]+' '+start+'% '+cumulative+'%';});
   const legend=slices.map((s,i)=>'<li><i style="background:'+colors[i]+'"></i>'+h(s.name)+' <strong>'+fmt(s.value)+' · '+pct(s.value/total*100)+'</strong></li>').join('');
-  return '<div class="rank-charts">'+section('Highest net worth','<p class="sl-muted">Top five individual match finishes</p><ul class="worth-list">'+(worth||'<li>No net worth recorded.</li>')+'</ul>')+section('Support impact','<p class="sl-muted">Top five by recorded support gold · '+support.coverage+'</p>'+(total?'<div class="assist-layout"><div class="assist-donut" aria-hidden="true" style="background:conic-gradient('+stops.join(',')+')"><b>'+fmt(total)+'<small>support gold</small></b></div><ul class="assist-list">'+legend+'</ul></div>':'<p>No support gold recorded.</p>'))+lobbyRecords(s.matches)+'</div>';
+  return '<div class="rank-charts">'+section('Highest net worth','<p class="sl-muted">Top five individual match finishes</p><ul class="worth-list">'+(worth||'<li>No net worth recorded.</li>')+'</ul>')+section('Support impact','<p class="sl-muted">Top five by avg support gold per lobby · '+support.coverage+'</p>'+(total?'<div class="assist-layout"><div class="assist-donut" aria-hidden="true" style="background:conic-gradient('+stops.join(',')+')"><b>'+fmt(total)+'<small>avg support gold</small></b></div><ul class="assist-list">'+legend+'</ul></div>':'<p>No support gold recorded.</p>'))+lobbyRecords(s.matches)+'</div>';
 }
 // Standard shop values from OpenDota dotaconstants. Combined ward stacks and
 // recipes are omitted: only the individual ward or finished equipment earns credit.
