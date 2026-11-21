@@ -186,6 +186,34 @@ function tournamentCharts(s){
   const legend=slices.map((s,i)=>'<li><i style="background:'+colors[i]+'"></i>'+h(s.name)+' <strong>'+fmt(s.value)+' · '+pct(s.value/total*100)+'</strong></li>').join('');
   return '<div class="rank-charts">'+section('Highest net worth','<p class="sl-muted">Top five individual match finishes</p><ul class="worth-list">'+(worth||'<li>No net worth recorded.</li>')+'</ul>')+section('Support impact','<p class="sl-muted">Share of total assists among identified players</p>'+(total?'<div class="assist-layout"><div class="assist-donut" aria-hidden="true" style="background:conic-gradient('+stops.join(',')+')"><b>'+fmt(total)+'<small>assists</small></b></div><ul class="assist-list">'+legend+'</ul></div>':'<p>No assists recorded.</p>'))+'</div>';
 }
+// Standard shop values from OpenDota dotaconstants. Combined ward stacks and
+// recipes are omitted: only the individual ward or finished equipment earns credit.
+const supportItems=new Map(Object.entries({
+  ward_observer:[0],ward_sentry:[50],smoke_of_deceit:[50],dust:[80],gem:[900],
+  urn_of_shadows:[875],spirit_vessel:[2725,'urn_of_shadows'],essence_distiller:[1775,'urn_of_shadows'],
+  arcane_boots:[1500],mekansm:[1775],guardian_greaves:[4350,'arcane_boots','mekansm'],
+  pavise:[1250],solar_crest:[2575,'pavise'],glimmer_cape:[2150],force_staff:[2200],
+  pipe:[3725],holy_locket:[2250]
+}));
+function supportPurchaseValue(p){
+  if(!Array.isArray(p.purchase_log))return null;
+  let gold=0;
+  const credited=new Map();
+  for(const event of [...p.purchase_log].sort((a,b)=>a.time-b.time)){
+    const key=itemKey(itemKey(event.key)||event.item_id),rule=supportItems.get(key);
+    if(!rule)continue;
+    gold+=rule[0];
+    for(const component of rule.slice(1)){
+      const count=credited.get(component)||0;
+      if(count>0){
+        gold-=supportItems.get(component)[0];
+        credited.set(component,count-1);
+      }
+    }
+    credited.set(key,(credited.get(key)||0)+1);
+  }
+  return gold;
+}
 function keyPlayerCards(s){
   const rows=s.matches.flatMap(m=>players(m).map(p=>({
     p, m, win:typeof m.radiant_win==='boolean'?radiant(p)===m.radiant_win:null,
@@ -207,6 +235,14 @@ function keyPlayerCards(s){
     const note=typeof description==='function'?description(best):description;
     return '<a class="sl-award" href="'+h(best.href)+'">'+header+'<div>'+portrait(best.heroId)+'<span><b>'+h(best.name)+'</b> '+badge+'<br>'+h(heroName(best.heroId))+'</span></div><strong>'+h(format(value))+'</strong>'+h(note)+'</a>';
   }
+  const covered=s.matches.filter(m=>players(m).length && players(m).every(p=>Array.isArray(p.purchase_log))).length;
+  const benefactors=s.players.map(p=>{
+    const values=p.rows.map(r=>supportPurchaseValue(r.p)).filter(available);
+    return {...p,href:'#player/'+p.id,observed:values.length,average:numericMean(values)};
+  }).filter(p=>p.average>0).sort((a,b)=>b.observed-a.observed || a.name.localeCompare(b.name));
+  const coverage=covered+'/'+s.matches.length+' matches logged';
+  const supportNote=p=>'Shop value · '+p.observed+'/'+p.games+' player games · '+
+    (covered<s.matches.length?'Provisional · ':'')+coverage;
   const multi=entry=>'Average over '+entry.games+' games';
   const winning=rows.filter(r=>r.win && available(r.p.assists) && r.p.assists>0)
     .sort((a,b)=>(kp(b.m,b.p)??-1)-(kp(a.m,a.p)??-1));
@@ -215,7 +251,7 @@ function keyPlayerCards(s){
     card('Support MVP',winning,r=>r.p.assists,v=>fmt(v)+' assists',r=>'Most assists in a win · '+pct(kp(r.m,r.p))+' KP'),
     card('The nuker',rows,r=>r.p.hero_damage,fmt,'Hero damage'),
     card('The demolisher',rows,r=>r.p.tower_damage,fmt,'Tower damage'),
-    card('The benefactor',rows,r=>r.p.support_gold_spent,fmt,'Gold spent on support items'),
+    card('The benefactor',benefactors,p=>p.average,v=>fmt(v)+' gold/game',benefactors.length?supportNote:'Support item purchases · '+coverage),
     card('Bloodthirsty',rows,r=>r.p.kills,fmt,'Most kills in a game'),
     card('Unsung hero',rows.filter(r=>r.win===false),r=>r.p.assists,fmt,'Most assists in a loss'),
     card('The enabler',rows,r=>r.p.assists,fmt,'Most assists in a game'),

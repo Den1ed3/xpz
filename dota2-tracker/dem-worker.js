@@ -13,8 +13,22 @@ function changed(rows,entry,key){
  if(JSON.stringify(rows.at(-1)?.[key])!==JSON.stringify(entry[key]))rows.push(entry);
 }
 export async function extractReplay(file,report=()=>{}){
- const parser=new Parser(new ParserConfiguration({messagePacketTypes:[MessagePacketType.SVC_PACKET_ENTITIES]})),demo=parser.getDemo();
+ const parser=new Parser(new ParserConfiguration({messagePacketTypes:[MessagePacketType.SVC_PACKET_ENTITIES,MessagePacketType.DOTA_UM_COMBAT_LOG_DATA_HLTV]})),demo=parser.getDemo();
  const roster=new Map(),track=[],gold=[],xp=[];
+ // Combat-log PURCHASE entries identify the buyer and item by string-table index.
+ const purchases=new Map();
+ let gameStart;
+ parser.registerPostInterceptor(InterceptorStage.MESSAGE_PACKET,(_,message)=>{
+   if(message.type!==MessagePacketType.DOTA_UM_COMBAT_LOG_DATA_HLTV)return;
+   const entry=message.data;
+   if(entry.type!==11 || !Number.isFinite(entry.timestamp))return;
+   const names=demo.stringTableContainer.getByName('CombatLogNames');
+   const buyer=names?.getEntryById(entry.targetName)?.key;
+   const item=names?.getEntryById(entry.value)?.key;
+   if(!buyer?.startsWith('npc_dota_hero_') || !item?.startsWith('item_'))return;
+   if(!purchases.has(buyer))purchases.set(buyer,[]);
+   purchases.get(buyer).push({key:item.slice(5),time:entry.timestamp});
+ });
  let info,startTick=0,lastTick=-1e6,lastTime=-1,endTime=0,lastMinute=-1;
  parser.registerPostInterceptor(InterceptorStage.DEMO_PACKET,packet=>{
    if(packet.is(DemoPacketType.DEM_FILE_HEADER))startTick=packet.data.serverStartTick||0;
@@ -25,7 +39,7 @@ export async function extractReplay(file,report=()=>{}){
    lastTick=packet.tick;
    const rules=demo.getEntitiesByClassName('CDOTAGamerulesProxy')[0];
    const rule=k=>field(rules,'m_pGameRules.'+k);
-   const start=rule('m_flGameStartTime');if(!(start>0))return;
+   const start=rule('m_flGameStartTime');if(!(start>0))return;gameStart=start;
    const end=rule('m_flGameEndTime');if(end>start)endTime=Math.round(end-start);
    const tick=rule('m_bGamePaused')?rule('m_nPauseStartTick'):packet.tick+startTick;
    const time=Math.floor((tick-(rule('m_nTotalPausedTicks')||0))*(demo.server?.tickInterval||1/30)-start);
@@ -90,6 +104,10 @@ export async function extractReplay(file,report=()=>{}){
    const sameTeam=meta.playerInfo.filter(h=>h.gameTeam===(p.player_slot<128?2:3));
    const who=sameTeam.find(h=>heroIDs[h.heroName?.replace(/^npc_dota_hero_/,'')]===p.hero_id);
    if(who){
+     const log=purchases.get(who.heroName);
+     if(log && meta.playerInfo.filter(h=>h.heroName===who.heroName).length===1){
+       p.purchase_log=log.map(e=>({key:e.key,time:Math.floor(e.time-gameStart)}));
+     }
      p.personaname=who.playerName;
      const steam=BigInt(who.steamid||0)-76561197960265728n;
      if(steam>0n&&steam<4294967295n)p.account_id=Number(steam);
