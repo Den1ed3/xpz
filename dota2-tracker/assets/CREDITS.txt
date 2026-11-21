@@ -1,0 +1,7 @@
+Dota 2 names, characters, Workshop models and artwork are property of Valve Corporation. Ancient Ledger is an unofficial community project.
+Hero metadata from OpenDota dotaconstants: https://github.com/odota/dotaconstants
+Hero portraits and animations from Valve's Dota 2 content CDN.
+The bundled default hero models were converted from Valve’s public Workshop reference downloads and given custom idle movements: https://www.dota2.com/workshop/requirements
+The model-viewer component is copyright Google LLC and its contributors. See bundled license headers and the package license in models/LICENSE.txt.
+Tactical map artwork: Dota 2, Valve; map reference detailed_740 from odota/web. Map art represents the 7.40 layout.
+Browser replay reader: @deademx/dota2, distributed under the licenses in dem-vendor/LICENSES.txt.
