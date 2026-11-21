@@ -131,6 +131,8 @@ const catalog = {
 
 const steam = 'https://cdn.cloudflare.steamstatic.com/apps/dota2';
 const videoKeys = new Set(['puck', 'phantom_assassin', 'shadow_shaman', 'axe', 'rubick', 'magnataur', 'juggernaut']);
+// Corrected scenes share the original GLB geometry, textures and idle animation.
+const equippedScenes = new Set(['axe','juggernaut','rubick','shadow_shaman','magnataur','phantom_assassin','dark_willow','invoker']);
 const modelKeys = new Set([...videoKeys, 'spectre', 'dark_willow', 'undying', 'invoker']);
 const localAsset = path => new URL('./assets/' + path, import.meta.url).href;
 export function heroName(id) { return catalog[id]?.[0] || ('Hero ' + (Number(id) || 'unknown')); }
@@ -268,7 +270,7 @@ export async function switchHeroShowcase(stage,id) {
       media=createModel(key,name);
       const ready=waitForMedia(media,'load',signal,9000);
       layer.append(media);
-      media.src=localAsset('models/'+key+'.glb')+'?v=2';
+      media.src=localAsset('models/'+key+(equippedScenes.has(key)?'.gltf':'.glb'))+'?v=3';
       await ready;
       isModel=true;
     } catch {

@@ -157,7 +157,7 @@ function standingsPanel(ranked){
   const filtered=ranked.filter(p=>p.games>=boardState.minGames && p.name.toLowerCase().includes(boardState.query.trim().toLowerCase())).sort(byColumn);
   const count=Math.max(1,Math.ceil(filtered.length/20));
   const page=boardState.page=Math.min(boardState.page,count);
-  const rows=filtered.slice((page-1)*20,page*20).map(p=>cells(p.rank,'<span class="sl-person">'+portrait(p.heroId)+'<a href="#player/'+p.id+'">'+h(p.name)+'</a></span>',p.games,p.wins+'–'+p.losses,pct(p.winRate),fmt(p.kills),fmt(p.deaths),fmt(p.assists),fixed(p.kda),pct(p.kp),fmt(p.gpm),fmt(p.xpm),p.mvps)).join('');
+  const rows=filtered.slice((page-1)*20,page*20).map(p=>cells(p.rank,'<a href="#player/'+p.id+'">'+h(p.name)+'</a>',p.games,p.wins+'–'+p.losses,pct(p.winRate),fmt(p.kills),fmt(p.deaths),fmt(p.assists),fixed(p.kda),pct(p.kp),fmt(p.gpm),fmt(p.xpm),p.mvps)).join('');
   const headers=boardColumns.map(([key,label])=>{
     const active=boardState.key===key;
     return '<th scope="col"'+(active?' aria-sort="'+(boardState.direction===1?'ascending':'descending')+'"':'')+'><button data-sort="'+key+'">'+label+' <span aria-hidden="true">'+(active?(boardState.direction===1?'↑':'↓'):'↕')+'</span></button></th>';
