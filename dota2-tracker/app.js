@@ -1,5 +1,5 @@
 import {readTournament, publishMatch} from './github-store.js';
-import {summary,graph,matchView,playersView,heroTable} from './stats.js';
+import {summary,graph,matchView,playersView,bindPlayerBoard,heroTable} from './stats.js';
 import {heroName,heroPortrait,heroShowcase,hydrateHeroes,switchHeroShowcase} from './heroes.js';
 import {mountExplorer} from './explorer.js';
 import {mountPlayback} from './playback.js';
@@ -133,6 +133,7 @@ function render(){
    if(match)disposeReplay=mountPlayback($('#playback'),match);
    else $('#playback').textContent='This match is unavailable.';
  }
+ if(area==='players' && !id)bindPlayerBoard($('#app'),matches);
  hydrateHeroes();
 }
 async function refresh(){

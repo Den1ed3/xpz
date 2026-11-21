@@ -133,12 +133,82 @@ function profile(o) {
   const recent=o.rows.map(({m,p,mvp})=>cells('<a href="#match/'+h(encodeURIComponent(m.match_id))+'">#'+h(m.match_id)+'</a>',h(hero(p)),typeof m.radiant_win==='boolean'?(radiant(p)===m.radiant_win?'Win':'Loss'):'—',fmt(p.kills)+' / '+fmt(p.deaths)+' / '+fmt(p.assists),mvp===p?'MVP':'—')).join('');
   return '<article class="sl-detail"><div class="sl-matchhead"><div><small>Player profile</small><h2>'+h(o.name)+'</h2></div>'+portrait(o.heroId)+'</div><div class="sl-kpis">'+[['Matches',o.games],['Wins / losses',o.wins+' / '+o.losses],['Win rate',pct(o.winRate)],['Loss rate',pct(o.loseRate)],['W/L ratio',o.losses?fixed(o.wins/o.losses):o.wins?'Undefeated':'—'],['Overall KDA',fixed(o.kda)],['Match MVPs',o.mvps],['Avg KP',pct(o.kp)],['Avg GPM',fmt(o.gpm)],['Avg XPM',fmt(o.xpm)]].map(([key,v])=>'<div><small>'+key+'</small><strong>'+v+'</strong></div>').join('')+'</div>'+section('Hero pool',table(['Hero','Picks','Win rate','KDA'],hrows))+section('Match history',table(['Match','Hero','Result','K / D / A','Award'],recent))+'</article>';
 }
-export function playersView(matches,id) {
-  const {players:ranked,awards}=summary(matches);
-  if(id) {const o=ranked.find(a=>String(a.id)===String(id));return o?profile(o):'<p class="sl-empty">This player has no tracked matches.</p>';}
-  const standings=ranked.map((o,i)=>cells(i+1,'<span class="sl-person">'+portrait(o.heroId)+'<a href="#player/'+h(o.id)+'">'+h(o.name)+'</a></span>',o.games,o.wins+'–'+o.losses,pct(o.winRate),fmt(o.kills)+' / '+fmt(o.deaths)+' / '+fmt(o.assists),fixed(o.kda),pct(o.kp),fmt(o.gpm),fmt(o.xpm),o.mvps)).join('');
-  const cards=awards.map(a=>'<a class="sl-award" href="#match/'+h(encodeURIComponent(a.matchId))+'"><small>'+h(a.title)+'</small><div>'+portrait(a.heroId)+'<b>'+h(a.name)+'</b></div><strong>'+fmt(a.value)+'</strong> '+h(a.label)+'</a>').join('');
-  return section('Player leaderboard',standings?table(['#','Player','Games','W–L','Win rate','Total K / D / A','KDA','Avg KP','Avg GPM','Avg XPM','MVPs'],standings):'<p class="sl-empty">No identified players in the tracked matches.</p>')+'<p class="sl-muted">Ranked by tracker MVPs, then overall KDA. Each match awards MVP to the winning player with the highest KDA + kill participation percentage ÷ 10. Anonymous players appear on match scoreboards.</p>'+(cards?section('Tournament highlights','<div class="sl-awards">'+cards+'</div>'):'');
+const boardColumns=[
+  ['rank','#'],['name','Player'],['games','Games'],['record','W–L'],['winRate','Win rate'],
+  ['kills','Kills'],['deaths','Deaths'],['assists','Assists'],['kda','KDA'],['kp','Avg KP'],
+  ['gpm','Avg GPM'],['xpm','Avg XPM'],['mvps','MVPs']
+];
+const boardState={key:'winRate',direction:-1,query:'',minGames:1,page:1,heroPage:1};
+function byStanding(a,b){
+  return (b.winRate??-1)-(a.winRate??-1) || b.wins-a.wins || (b.kda??-1)-(a.kda??-1) || a.name.localeCompare(b.name) || Number(a.id)-Number(b.id);
+}
+function byColumn(a,b){
+  const {key,direction}=boardState;
+  if(key==='name')return direction*a.name.localeCompare(b.name) || a.rank-b.rank;
+  if(key==='record')return direction*(a.wins-b.wins || b.losses-a.losses) || a.rank-b.rank;
+  if(a[key]==null || b[key]==null)return Number(a[key]==null)-Number(b[key]==null) || a.rank-b.rank;
+  return direction*(a[key]-b[key]) || a.rank-b.rank;
+}
+function pageBar(label,page,count,total,size){
+  if(!total)return '';
+  return '<div class="rank-pager" aria-label="'+label+' pagination"><span>'+((page-1)*size+1)+'–'+Math.min(page*size,total)+' of '+total+'</span><button data-step="-1" '+(page===1?'disabled':'')+' aria-label="Previous '+label+' page">Previous</button><span>Page '+page+' of '+count+'</span><button data-step="1" '+(page===count?'disabled':'')+' aria-label="Next '+label+' page">Next</button></div>';
+}
+function standingsPanel(ranked){
+  const filtered=ranked.filter(p=>p.games>=boardState.minGames && p.name.toLowerCase().includes(boardState.query.trim().toLowerCase())).sort(byColumn);
+  const count=Math.max(1,Math.ceil(filtered.length/20));
+  const page=boardState.page=Math.min(boardState.page,count);
+  const rows=filtered.slice((page-1)*20,page*20).map(p=>cells(p.rank,'<span class="sl-person">'+portrait(p.heroId)+'<a href="#player/'+p.id+'">'+h(p.name)+'</a></span>',p.games,p.wins+'–'+p.losses,pct(p.winRate),fmt(p.kills),fmt(p.deaths),fmt(p.assists),fixed(p.kda),pct(p.kp),fmt(p.gpm),fmt(p.xpm),p.mvps)).join('');
+  const headers=boardColumns.map(([key,label])=>{
+    const active=boardState.key===key;
+    return '<th scope="col"'+(active?' aria-sort="'+(boardState.direction===1?'ascending':'descending')+'"':'')+'><button data-sort="'+key+'">'+label+' <span aria-hidden="true">'+(active?(boardState.direction===1?'↑':'↓'):'↕')+'</span></button></th>';
+  }).join('');
+  return '<div class="sl-scroll"><table class="sl-table"><thead><tr>'+headers+'</tr></thead><tbody>'+ (rows||'<tr><td colspan="13">No players match these filters.</td></tr>')+'</tbody></table></div>'+pageBar('players',page,count,filtered.length,20);
+}
+function heroMetaPanel(heroes){
+  if(!heroes.length)return '<p>No picks recorded.</p>';
+  const count=Math.ceil(heroes.length/5),page=boardState.heroPage=Math.min(boardState.heroPage,count);
+  const rows=heroes.slice((page-1)*5,page*5).map((p,i)=>'<li>'+portrait(p.id)+'<div><b>'+((page-1)*5+i+1)+'. '+h(p.name)+'</b><small>'+p.games+' '+(p.games===1?'pick':'picks')+' · '+pct(p.winRate)+' win rate</small><div class="meta-bars"><i style="width:'+100*p.games/heroes[0].games+'%"></i><i style="width:'+(p.winRate??0)+'%"></i></div></div></li>').join('');
+  return '<ul class="meta-list">'+rows+'</ul>'+pageBar('heroes',page,count,heroes.length,5);
+}
+function tournamentCharts(s){
+  const entries=s.matches.flatMap(m=>players(m).filter(p=>available(p.net_worth)).map(p=>({p,m}))).sort((a,b)=>b.p.net_worth-a.p.net_worth).slice(0,5);
+  const worth=entries.map(({p,m})=>'<li><div><a href="#match/'+m.match_id+'">'+h(ign(p))+'</a><span>'+h(hero(p))+' · #'+m.match_id+'</span></div><div class="worth-track"><i style="width:'+100*p.net_worth/Math.max(1,entries[0].p.net_worth)+'%"></i></div><strong>'+fmt(p.net_worth)+'</strong></li>').join('');
+  const support=s.players.filter(p=>p.assists>0).sort((a,b)=>b.assists-a.assists || a.name.localeCompare(b.name));
+  const total=support.reduce((n,p)=>n+p.assists,0);
+  const slices=support.slice(0,5).map(p=>({name:p.name,value:p.assists}));
+  const rest=total-slices.reduce((n,p)=>n+p.value,0);
+  if(rest)slices.push({name:'Other players',value:rest});
+  const colors=['#f2aa52','#63a8e6','#60bd98','#c78ae1','#ef8274','#667582'];
+  let cumulative=0;
+  const stops=slices.map((s,i)=>{const start=cumulative;cumulative+=s.value/total*100;return colors[i]+' '+start+'% '+cumulative+'%';});
+  const legend=slices.map((s,i)=>'<li><i style="background:'+colors[i]+'"></i>'+h(s.name)+' <strong>'+fmt(s.value)+' · '+pct(s.value/total*100)+'</strong></li>').join('');
+  return '<div class="rank-charts">'+section('Highest net worth','<p class="sl-muted">Top five individual match finishes</p><ul class="worth-list">'+(worth||'<li>No net worth recorded.</li>')+'</ul>')+section('Support impact','<p class="sl-muted">Share of total assists among identified players</p>'+(total?'<div class="assist-layout"><div class="assist-donut" aria-hidden="true" style="background:conic-gradient('+stops.join(',')+')"><b>'+fmt(total)+'<small>assists</small></b></div><ul class="assist-list">'+legend+'</ul></div>':'<p>No assists recorded.</p>'))+'</div>';
+}
+export function playersView(matches,id){
+  const s=summary(matches);
+  if(id){const p=s.players.find(o=>String(o.id)===String(id));return p?profile(p):'<p class="sl-empty">This player has no tracked matches.</p>';}
+  const ranked=[...s.players].sort(byStanding).map((p,i)=>({...p,rank:i+1}));
+  const best=s.matches.flatMap(m=>players(m).map(p=>({m,p,score:kda(p)}))).filter(r=>available(r.score)).sort((a,b)=>b.score-a.score)[0];
+  const highlights=best?[{title:'Play of the series',label:'KDA',value:best.score.toFixed(2),name:ign(best.p),heroId:best.p.hero_id,matchId:best.m.match_id},...s.awards]:s.awards;
+  const cards=highlights.map(a=>'<a class="sl-award" href="#match/'+a.matchId+'"><small>'+h(a.title)+'</small><div>'+portrait(a.heroId)+'<b>'+h(a.name)+'</b></div><strong>'+ (typeof a.value==='string'?h(a.value):fmt(a.value))+'</strong>'+h(a.label)+' · '+h(heroName(a.heroId))+'</a>').join('');
+  const tools='<div class="board-tools"><label>Search player <input type="search" data-query value="'+h(boardState.query)+'" placeholder="Player name"></label><label>Minimum games <input data-min-games type="number" min="1" step="1" value="'+boardState.minGames+'"></label></div>';
+  return section('Tournament highlights','<div class="sl-awards">'+cards+'</div>')+'<div class="rank-layout">'+section('Player leaderboard',tools+'<div id="rank-results">'+standingsPanel(ranked)+'</div><p class="sl-muted">Ranked by win rate, then wins and overall KDA.</p>')+section('Hero meta','<div id="meta-results">'+heroMetaPanel(s.heroes)+'</div>')+'</div>'+tournamentCharts(s);
+}
+export function bindPlayerBoard(root,matches){
+  const board=root.querySelector('#rank-results'),meta=root.querySelector('#meta-results');
+  if(!board || !meta)return;
+  const s=summary(matches),ranked=[...s.players].sort(byStanding).map((p,i)=>({...p,rank:i+1}));
+  const redraw=()=>{board.innerHTML=standingsPanel(ranked);};
+  root.querySelector('[data-query]').oninput=e=>{boardState.query=e.target.value;boardState.page=1;redraw();};
+  root.querySelector('[data-min-games]').oninput=e=>{boardState.minGames=Math.max(1,Math.floor(Number(e.target.value)||1));boardState.page=1;redraw();};
+  board.onclick=e=>{
+    const b=e.target.closest('button');if(!b)return;
+    if(b.dataset.sort){const key=b.dataset.sort;boardState.direction=boardState.key===key?-boardState.direction:(['rank','name','deaths'].includes(key)?1:-1);boardState.key=key;boardState.page=1;}
+    else if(b.dataset.step)boardState.page=Math.max(1,boardState.page+Number(b.dataset.step));
+    redraw();
+    board.querySelector(b.dataset.sort?'[data-sort="'+b.dataset.sort+'"]':'[data-step="'+b.dataset.step+'"]:not(:disabled)')?.focus({preventScroll:true});
+  };
+  meta.onclick=e=>{const b=e.target.closest('[data-step]');if(!b)return;boardState.heroPage=Math.max(1,boardState.heroPage+Number(b.dataset.step));meta.innerHTML=heroMetaPanel(s.heroes);meta.querySelector('[data-step="'+b.dataset.step+'"]:not(:disabled)')?.focus({preventScroll:true});};
 }
 /* OpenDota dotaconstants display labels
 MIT License
