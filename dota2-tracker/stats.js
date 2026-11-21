@@ -68,7 +68,9 @@ export function summary(input) {
   // A replay timeline is stronger evidence than the final scoreboard.
   const parsed = matches.filter(m=>Array.isArray(m.radiant_gold_adv)&&m.radiant_gold_adv.filter(available).length>=2);
   const featuredMatch=[...(parsed.length?parsed:matches)].sort((a,b)=>closeScore(b)-closeScore(a))[0]||null;
-  return {matches,players:ranked,heroes,featuredMatch,featuredPlayer:ranked[0]||null,awards};
+  // Players are already ordered by MVPs and KDA, so keep the first on a games tie.
+  const featuredPlayer=ranked.reduce((best,p)=>!best || p.games>best.games ? p : best,null);
+  return {matches,players:ranked,heroes,featuredMatch,featuredPlayer,awards};
 }
 function portrait(id) {
   return '<img class="sl-avatar" src="'+h(heroImage(id))+'" alt="" loading="lazy">';
