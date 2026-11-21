@@ -34,6 +34,7 @@ function closeScore(m) {
   const a=m.radiant_score,b=m.dire_score;
   return available(a) && available(b) && a+b ? 1-Math.abs(a-b)/(a+b) : -1;
 }
+const recentLimit=5;
 function aggregate(id,name,rows){
   const p = rows.map(r=>r.p);
   const sum = key => p.every(v=>available(v[key])) ? p.reduce((n,v)=>n+v[key],0) : null;
@@ -41,11 +42,15 @@ function aggregate(id,name,rows){
   const outcomes = rows.filter(r=>typeof r.m.radiant_win === 'boolean');
   const wins = outcomes.filter(r=>radiant(r.p) === r.m.radiant_win).length;
   const losses = outcomes.length-wins;
+  const recent=rows.slice(0,recentLimit);
+  const played=recent.filter(r=>typeof r.m.radiant_win==='boolean');
+  const rate=played.length?100*played.filter(r=>radiant(r.p)===r.m.radiant_win).length/played.length:null;
+  const recentSum=key=>recent.every(r=>available(r.p[key]))?recent.reduce((n,r)=>n+r.p[key],0):null;
   const picks = new Map();
   for(const row of p) picks.set(row.hero_id,(picks.get(row.hero_id)||0)+1);
   const heroId = [...picks].sort((a,b)=>b[1]-a[1] || a[0]-b[0])[0]?.[0];
-  return {id,name,games:p.length,wins,losses,winRate:outcomes.length?wins/outcomes.length*100:null,loseRate:outcomes.length?losses/outcomes.length*100:null,kda:kda({kills,deaths,assists}),kills,deaths,assists,
-    mvps:rows.filter(r=>r.mvp===r.p).length,gpm:numericMean(p.map(v=>v.gold_per_min)),xpm:numericMean(p.map(v=>v.xp_per_min)),kp:numericMean(rows.map(r=>kp(r.m,r.p))),heroId,rows};
+  return {id,name,games:p.length,wins,losses,winRate:rate,loseRate:rate===null?null:100-rate,kda:kda({kills:recentSum('kills'),deaths:recentSum('deaths'),assists:recentSum('assists')}),kills,deaths,assists,
+    mvps:rows.filter(r=>r.mvp===r.p).length,gpm:numericMean(recent.map(r=>r.p.gold_per_min)),xpm:numericMean(recent.map(r=>r.p.xp_per_min)),kp:numericMean(recent.map(r=>kp(r.m,r.p))),heroId,rows};
 }
 export function summary(input) {
   const matches=[...input].sort((a,b)=>(b.start_time||0)-(a.start_time||0)||Number(b.match_id)-Number(a.match_id));
@@ -133,7 +138,7 @@ function profile(o) {
   for(const r of o.rows){const key=r.p.hero_id;if(!heroes.has(key))heroes.set(key,[]);heroes.get(key).push(r);}
   const hrows=[...heroes].map(([id,rs])=>aggregate(id,hero(rs[0].p),rs)).sort((a,b)=>b.games-a.games).map(a=>cells('<span class="sl-person">'+portrait(a.id)+h(a.name)+'</span>',a.games,pct(a.winRate),fixed(a.kda))).join('');
   const recent=o.rows.map(({m,p,mvp})=>cells('<a href="#match/'+h(encodeURIComponent(m.match_id))+'">#'+h(m.match_id)+'</a>',h(hero(p)),typeof m.radiant_win==='boolean'?(radiant(p)===m.radiant_win?'Win':'Loss'):'—',fmt(p.kills)+' / '+fmt(p.deaths)+' / '+fmt(p.assists),mvp===p?'MVP':'—')).join('');
-  return '<article class="sl-detail"><div class="sl-matchhead"><div><small>Player profile</small><h2>'+h(o.name)+'</h2></div>'+portrait(o.heroId)+'</div><div class="sl-kpis">'+[['Matches',o.games],['Wins / losses',o.wins+' / '+o.losses],['Win rate',pct(o.winRate)],['Loss rate',pct(o.loseRate)],['Overall KDA',fixed(o.kda)],['Match MVPs',o.mvps],['Avg KP',pct(o.kp)],['Avg GPM',fmt(o.gpm)],['Avg XPM',fmt(o.xpm)]].map(([key,v])=>'<div><small>'+key+'</small><strong>'+v+'</strong></div>').join('')+'</div>'+section('Hero pool',table(['Hero','Picks','Win rate','KDA'],hrows))+section('Match history',table(['Match','Hero','Result','K / D / A','Award'],recent))+'</article>';
+  return '<article class="sl-detail"><div class="sl-matchhead"><div><small>Player profile</small><h2>'+h(o.name)+'</h2></div>'+portrait(o.heroId)+'</div><div class="sl-kpis">'+[['Matches',o.games],['Wins / losses',o.wins+' / '+o.losses],['Win rate',pct(o.winRate)],['Loss rate',pct(o.loseRate)],['Recent KDA',fixed(o.kda)],['Match MVPs',o.mvps],['Avg KP',pct(o.kp)],['Avg GPM',fmt(o.gpm)],['Avg XPM',fmt(o.xpm)]].map(([key,v])=>'<div><small>'+key+'</small><strong>'+v+'</strong></div>').join('')+'</div>'+'<p class="sl-muted">Rates, KDA and averages use up to five recent games.</p>'+section('Hero pool',table(['Hero','Picks','Win rate','KDA'],hrows))+section('Match history',table(['Match','Hero','Result','K / D / A','Award'],recent))+'</article>';
 }
 const boardColumns=[
   ['rank','#'],['name','Player'],['games','Games'],['record','W–L'],['winRate','Win rate'],
@@ -172,19 +177,32 @@ function heroMetaPanel(heroes){
   const rows=heroes.slice((page-1)*5,page*5).map((p,i)=>'<li>'+portrait(p.id)+'<div><b>'+((page-1)*5+i+1)+'. '+h(p.name)+'</b><small>'+p.games+' '+(p.games===1?'pick':'picks')+' · '+pct(p.winRate)+' win rate</small><div class="meta-bars"><i style="width:'+100*p.games/heroes[0].games+'%"></i><i style="width:'+(p.winRate??0)+'%"></i></div></div></li>').join('');
   return '<ul class="meta-list">'+rows+'</ul>'+pageBar('heroes',page,count,heroes.length,5);
 }
-function tournamentCharts(s){
+function lobbyRecords(matches){
+  const rows=matches.flatMap(m=>players(m).map(p=>({m,p})));
+  function record(label,entries,score,format){
+    const best=entries.reduce((lead,r)=>available(score(r)) && (!lead || score(r)>score(lead))?r:lead,null);
+    if(!best)return '<li>'+label+'<strong>—</strong></li>';
+    const context=best.p?h(ign(best.p))+' · '+h(hero(best.p))+' · ':'';
+    return '<li>'+label+'<strong>'+format(score(best))+'</strong><a href="#match/'+h(best.m.match_id)+'">'+context+'#'+h(best.m.match_id)+'</a></li>';
+  }
+  return section('Lobby quick stats','<p class="sl-muted">Single-match tournament records</p><ul class="lobby-records">'+
+    record('Longest game',matches.map(m=>({m})),r=>r.m.duration,duration)+
+    record('Highest healing',rows,r=>r.p.hero_healing,fmt)+
+    record('Most building damage',rows,r=>r.p.tower_damage,fmt)+
+    record('Most denies',rows,r=>r.p.denies,fmt)+'</ul>');
+}
+function tournamentCharts(s,support){
   const entries=s.matches.flatMap(m=>players(m).filter(p=>available(p.net_worth)).map(p=>({p,m}))).sort((a,b)=>b.p.net_worth-a.p.net_worth).slice(0,5);
   const worth=entries.map(({p,m})=>'<li><div><a href="#match/'+m.match_id+'">'+h(ign(p))+'</a><span>'+h(hero(p))+' · #'+m.match_id+'</span></div><div class="worth-track"><i style="width:'+100*p.net_worth/Math.max(1,entries[0].p.net_worth)+'%"></i></div><strong>'+fmt(p.net_worth)+'</strong></li>').join('');
-  const support=s.players.filter(p=>p.assists>0).sort((a,b)=>b.assists-a.assists || a.name.localeCompare(b.name));
-  const total=support.reduce((n,p)=>n+p.assists,0);
-  const slices=support.slice(0,5).map(p=>({name:p.name,value:p.assists}));
+  const total=support.total;
+  const slices=support.ranked.slice(0,5).map(p=>({name:p.name,value:p.gold}));
   const rest=total-slices.reduce((n,p)=>n+p.value,0);
   if(rest)slices.push({name:'Other players',value:rest});
   const colors=['#f2aa52','#63a8e6','#60bd98','#c78ae1','#ef8274','#667582'];
   let cumulative=0;
   const stops=slices.map((s,i)=>{const start=cumulative;cumulative+=s.value/total*100;return colors[i]+' '+start+'% '+cumulative+'%';});
   const legend=slices.map((s,i)=>'<li><i style="background:'+colors[i]+'"></i>'+h(s.name)+' <strong>'+fmt(s.value)+' · '+pct(s.value/total*100)+'</strong></li>').join('');
-  return '<div class="rank-charts">'+section('Highest net worth','<p class="sl-muted">Top five individual match finishes</p><ul class="worth-list">'+(worth||'<li>No net worth recorded.</li>')+'</ul>')+section('Support impact','<p class="sl-muted">Share of total assists among identified players</p>'+(total?'<div class="assist-layout"><div class="assist-donut" aria-hidden="true" style="background:conic-gradient('+stops.join(',')+')"><b>'+fmt(total)+'<small>assists</small></b></div><ul class="assist-list">'+legend+'</ul></div>':'<p>No assists recorded.</p>'))+'</div>';
+  return '<div class="rank-charts">'+section('Highest net worth','<p class="sl-muted">Top five individual match finishes</p><ul class="worth-list">'+(worth||'<li>No net worth recorded.</li>')+'</ul>')+section('Support impact','<p class="sl-muted">Top five by recorded support gold · '+support.coverage+'</p>'+(total?'<div class="assist-layout"><div class="assist-donut" aria-hidden="true" style="background:conic-gradient('+stops.join(',')+')"><b>'+fmt(total)+'<small>support gold</small></b></div><ul class="assist-list">'+legend+'</ul></div>':'<p>No support gold recorded.</p>'))+lobbyRecords(s.matches)+'</div>';
 }
 // Standard shop values from OpenDota dotaconstants. Combined ward stacks and
 // recipes are omitted: only the individual ward or finished equipment earns credit.
@@ -214,14 +232,27 @@ function supportPurchaseValue(p){
   }
   return gold;
 }
-function keyPlayerCards(s){
+function lobbySupport(s){
+  const lobbies=s.matches.slice(0,recentLimit);
+  const ids=new Set(lobbies.map(m=>m.match_id));
+  const covered=lobbies.filter(m=>players(m).length && players(m).every(p=>Array.isArray(p.purchase_log))).length;
+  const ranked=s.players.map(p=>{
+    const games=p.rows.filter(r=>ids.has(r.m.match_id));
+    const values=games.map(r=>supportPurchaseValue(r.p)).filter(available);
+    const gold=values.reduce((a,b)=>a+b,0);
+    return {...p,href:'#player/'+p.id,gold,attended:games.length,perLobby:gold/lobbies.length};
+  }).filter(p=>p.gold>0).sort((a,b)=>b.gold-a.gold || b.attended-a.attended || a.name.localeCompare(b.name));
+  const total=lobbies.reduce((n,m)=>n+players(m).reduce((sum,p)=>sum+(supportPurchaseValue(p)??0),0),0);
+  return {ranked,total,coverage:(covered<lobbies.length?'Provisional · ':'')+covered+'/'+lobbies.length+' lobbies logged',count:lobbies.length};
+}
+function keyPlayerCards(s,support){
   const rows=s.matches.flatMap(m=>players(m).map(p=>({
     p, m, win:typeof m.radiant_win==='boolean'?radiant(p)===m.radiant_win:null,
     name:ign(p),heroId:p.hero_id,href:'#match/'+m.match_id
   })));
   const repeat=s.players.filter(p=>p.games>=2).map(p=>({
     ...p, href:'#player/'+p.id,
-    avgKda:numericMean(p.rows.map(r=>kda(r.p))),avgDeaths:available(p.deaths)?p.deaths/p.games:null
+    avgKda:numericMean(p.rows.slice(0,recentLimit).map(r=>kda(r.p))),avgDeaths:numericMean(p.rows.slice(0,recentLimit).map(r=>r.p.deaths))
   }));
   function card(title,entries,score,format,description,low=false){
     let best=null, value=null;
@@ -235,15 +266,8 @@ function keyPlayerCards(s){
     const note=typeof description==='function'?description(best):description;
     return '<a class="sl-award" href="'+h(best.href)+'">'+header+'<div>'+portrait(best.heroId)+'<span><b>'+h(best.name)+'</b> '+badge+'<br>'+h(heroName(best.heroId))+'</span></div><strong>'+h(format(value))+'</strong>'+h(note)+'</a>';
   }
-  const covered=s.matches.filter(m=>players(m).length && players(m).every(p=>Array.isArray(p.purchase_log))).length;
-  const benefactors=s.players.map(p=>{
-    const values=p.rows.map(r=>supportPurchaseValue(r.p)).filter(available);
-    return {...p,href:'#player/'+p.id,observed:values.length,average:numericMean(values)};
-  }).filter(p=>p.average>0).sort((a,b)=>b.observed-a.observed || a.name.localeCompare(b.name));
-  const coverage=covered+'/'+s.matches.length+' matches logged';
-  const supportNote=p=>'Shop value · '+p.observed+'/'+p.games+' player games · '+
-    (covered<s.matches.length?'Provisional · ':'')+coverage;
-  const multi=entry=>'Average over '+entry.games+' games';
+  const supportNote=p=>p.attended+'/'+support.count+' lobbies played · '+support.coverage;
+  const multi=entry=>'Average over '+Math.min(entry.games,recentLimit)+' recent games';
   const winning=rows.filter(r=>r.win && available(r.p.assists) && r.p.assists>0)
     .sort((a,b)=>(kp(b.m,b.p)??-1)-(kp(a.m,a.p)??-1));
   return [
@@ -251,7 +275,7 @@ function keyPlayerCards(s){
     card('Support MVP',winning,r=>r.p.assists,v=>fmt(v)+' assists',r=>'Most assists in a win · '+pct(kp(r.m,r.p))+' KP'),
     card('The nuker',rows,r=>r.p.hero_damage,fmt,'Hero damage'),
     card('The demolisher',rows,r=>r.p.tower_damage,fmt,'Tower damage'),
-    card('The benefactor',benefactors,p=>p.average,v=>fmt(v)+' gold/game',benefactors.length?supportNote:'Support item purchases · '+coverage),
+    card('The benefactor',support.ranked,p=>p.perLobby,v=>fmt(v)+' gold/lobby',support.ranked.length?supportNote:support.coverage),
     card('Bloodthirsty',rows,r=>r.p.kills,fmt,'Most kills in a game'),
     card('Unsung hero',rows.filter(r=>r.win===false),r=>r.p.assists,fmt,'Most assists in a loss'),
     card('The enabler',rows,r=>r.p.assists,fmt,'Most assists in a game'),
@@ -264,9 +288,10 @@ export function playersView(matches,id){
   const s=summary(matches);
   if(id){const p=s.players.find(o=>String(o.id)===String(id));return p?profile(p):'<p class="sl-empty">This player has no tracked matches.</p>';}
   const ranked=[...s.players].sort(byStanding).map((p,i)=>({...p,rank:i+1}));
-  const cards=keyPlayerCards(s);
+  const support=lobbySupport(s);
+  const cards=keyPlayerCards(s,support);
   const tools='<div class="board-tools"><label>Search player <input type="search" data-query value="'+h(boardState.query)+'" placeholder="Player name"></label><label>Minimum games <input data-min-games type="number" min="1" step="1" value="'+boardState.minGames+'"></label></div>';
-  return section('Key Players','<div class="sl-awards">'+cards+'</div>')+'<div class="rank-layout">'+section('Player leaderboard',tools+'<div id="rank-results">'+standingsPanel(ranked)+'</div><p class="sl-muted">Ranked by win rate, then wins and overall KDA.</p>')+section('Hero meta','<div id="meta-results">'+heroMetaPanel(s.heroes)+'</div>')+'</div>'+tournamentCharts(s);
+  return section('Key Players','<div class="sl-awards">'+cards+'</div>')+'<div class="rank-layout">'+section('Player leaderboard',tools+'<div id="rank-results">'+standingsPanel(ranked)+'</div><p class="sl-muted">Rates, KDA and averages use the latest five games played. Ranked by win rate, then total wins and recent KDA.</p>')+section('Hero meta','<div id="meta-results">'+heroMetaPanel(s.heroes)+'</div>')+'</div>'+tournamentCharts(s,support);
 }
 export function bindPlayerBoard(root,matches){
   const board=root.querySelector('#rank-results'),meta=root.querySelector('#meta-results');
