@@ -35,6 +35,28 @@ function recent(matches,expandable=false) {
  }).join('');
  return '<div class="panel scroll"><table class="recent"><thead><tr>'+headers.map(v=>'<th scope="col">'+v+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
+const recentPageSize=3;
+function recentPage(matches,page){
+ const start=(page-1)*recentPageSize;
+ const table=recent(matches.slice(start,start+recentPageSize));
+ const total=Math.ceil(matches.length/recentPageSize);
+ if(total<=1)return table;
+ return table+'<div class="rank-pager" role="group" aria-label="Recent matches pages">'+
+   '<button type="button" data-recent-step="-1" '+(page===1?'disabled':'')+'>Previous</button>'+
+   '<span role="status">Page '+page+' of '+total+'</span>'+
+   '<button type="button" data-recent-step="1" '+(page===total?'disabled':'')+'>Next</button></div>';
+}
+function bindRecentPages(panel,matches){
+ let page=1;
+ panel.onclick=event=>{
+   const button=event.target.closest('[data-recent-step]');
+   if(!button || button.disabled)return;
+   page+=Number(button.dataset.recentStep);
+   panel.innerHTML=recentPage(matches,page);
+   const next=panel.querySelector('[data-recent-step="'+button.dataset.recentStep+'"]:enabled') || panel.querySelector('button:enabled');
+   next?.focus({preventScroll:true});
+ };
+}
 function closeRow(){
  if(!expanded)return;
  expanded.dispose?.();
@@ -101,7 +123,7 @@ function overview(s) {
  const heroes=top ? section('Hero spotlight','matches','All hero stats')+
    '<div class="heroesgrid" id="spotlight">'+spotlight(hs)+'</div>' : '';
 
- return features+section('Recent matches','matches','View all matches')+recent(s.matches.slice(0,4))+heroes+section('Featured match advantage')+graph(m);
+ return features+section('Recent matches','matches','View all matches')+'<div id="overview-recent">'+recentPage(s.matches,1)+'</div>'+heroes+section('Featured match advantage')+graph(m);
 }
 function render(){
  closeRow();
@@ -133,6 +155,7 @@ function render(){
    if(match)disposeReplay=mountPlayback($('#playback'),match);
    else $('#playback').textContent='This match is unavailable.';
  }
+ if(area==='overview' && s.matches.length>recentPageSize)bindRecentPages($('#overview-recent'),s.matches);
  if(area==='players' && !id)bindPlayerBoard($('#app'),matches);
  hydrateHeroes();
 }
