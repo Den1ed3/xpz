@@ -275,7 +275,7 @@ function keyPlayerCards(s,support){
     card('Support MVP',winning,r=>r.p.assists,v=>fmt(v)+' assists',r=>'Most assists in a win · '+pct(kp(r.m,r.p))+' KP'),
     card('The nuker',rows,r=>r.p.hero_damage,fmt,'Hero damage'),
     card('The demolisher',rows,r=>r.p.tower_damage,fmt,'Tower damage'),
-    card('The benefactor',support.ranked,p=>p.perLobby,v=>fmt(v)+' avg gold',support.ranked.length?supportNote:support.coverage),
+    card('The benefactor',support.ranked,p=>p.perLobby,v=>fmt(v)+' avg support gold',support.ranked.length?supportNote:support.coverage),
     card('Bloodthirsty',rows,r=>r.p.kills,fmt,'Most kills in a game'),
     card('Unsung hero',rows.filter(r=>r.win===false),r=>r.p.assists,fmt,'Most assists in a loss'),
     card('The enabler',rows,r=>r.p.assists,fmt,'Most assists in a game'),
